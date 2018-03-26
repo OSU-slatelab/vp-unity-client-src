@@ -21,7 +21,7 @@ public class EchoTest : MonoBehaviour {
 	private string lineCompare = "";
 	public Boolean ScoringToggle = false;
 	internal Boolean socketReady = false;   
-	WebSocket mySocket;
+//	WebSocket mySocket;
 	public static Boolean readyToConnect = true;
 	private Boolean connected = false;
 	private string firstName = "";
@@ -33,15 +33,15 @@ public class EchoTest : MonoBehaviour {
 	public static string PatientChoice = "patient1a";  // Jack Wilson - older white male
 
 	void Start() {
-		try {
-			mySocket = new WebSocket(new Uri(Host)); // Connect socket on startup
-			socketReady = true;
-		}
-		catch (Exception e) {
-			Debug.Log("Socket error: " + e);
-			reply = "Socket error: " + e;
-			error = true;
-		}
+//		try {
+//			mySocket = new WebSocket(new Uri(Host)); // Connect socket on startup
+//			socketReady = true;
+//		}
+//		catch (Exception e) {
+//			Debug.Log("Socket error: " + e);
+//			reply = "Socket error: " + e;
+//			error = true;
+//		}
 	}
 
 	void Update() {
@@ -170,20 +170,20 @@ public class EchoTest : MonoBehaviour {
 
 	IEnumerator writeSocket(string sendLine)
 	{
-		yield return StartCoroutine(mySocket.Connect()); // Wait till connection is established
+		//yield return StartCoroutine(mySocket.Connect()); // Wait till connection is established
 
 		string message = firstName+"_"+lastName+":"+PatientChoice +"\0\0"+sendLine+"\0";
 		print ("Sending: " + sendLine);
-		mySocket.SendString(message);
+		//mySocket.SendString(message);
 
 		receivedText = null;
 		while (receivedText == null) {
-			receivedText = mySocket.RecvString();
+			receivedText = ""; //mySocket.RecvString();
 			yield return 0;
 		}
 
 		print ("Received: " + receivedText);
-		mySocket.Close();
+		//mySocket.Close();
 	}
 
 	void ScoreMe () {

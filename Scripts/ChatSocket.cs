@@ -1,6 +1,8 @@
 using System;
+using System.Text;
 using UnityEngine; 
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
@@ -26,12 +28,25 @@ public class ChatSocket : MonoBehaviour {
 	private Boolean connected = false;
 	private string firstName = "";
 	private string lastName = "";
-	
+	private int conversationNum = -1;
+	private bool _conversationStarted = false;
+	private bool _voice = false;
+	private bool _guiVoice = false;
+	private Queue<string> _queryResources = new Queue<string> ();
+	private Queue<byte[]> _audioFiles = new Queue<byte[]> ();
+	private SpeechSynthesizer _synth = null;
+	private SpeechListener _listener = null;
+
 	// NEWER VARIABLES FOR USE WITH WEBSOCKETS
 	private string receivedText = "";
-	internal Boolean socketReady = false;   
-	WebSocket mySocket;
+	//internal Boolean socketReady = false;   
+	//WebSocket mySocket;
 	private Boolean error = false;
+	
+	// WEBSERVICE STUFF
+	private static string clientID = "Uty-0.1";
+	//private static string backendRootURL = "https://boulder.cse.ohio-state.edu/";
+	private static string backendRootURL = "http://127.0.0.1:5000/";
 
 	// SERVERS HOSTING CHATSCRIPT - (Port designations no longer required for Unity Web plugin versions, still required for WebGL versions)
 	
@@ -42,10 +57,10 @@ public class ChatSocket : MonoBehaviour {
 	// public static string Host = "128.146.170.195"; // TEMP SERVER
 	// public static string Host = "ws://52.24.145.185:27016"; // Amazon Web Services Server
 
-	// public static string Host = "ws://128.146.170.201:27016"; // Local Development Server Running Websockify
+	public static string Host = "ws://128.146.170.201:27016"; // Local Development Server Running Websockify
 
-	public static string Host = "ws://127.0.0.1:27016"; // LocalHost Test
-	//public static string Host = "ws://10.98.8.20:27016"; // DMZ Server
+	// public static string Host = "ws://127.0.0.1:27016"; // LocalHost Test
+	// public static string Host = "ws://10.98.8.20:27016"; // DMZ Server
 
 	// PATIENT ID'S
 
@@ -117,20 +132,40 @@ public class ChatSocket : MonoBehaviour {
 		}
 	}
 
+	public void ShowRecognitionResult(string recognized){
+		lineToSend = recognized;
+	}
+
+	public void SendQuery(string query){
+		reply = "";
+		StartCoroutine (postQuery (query));
+		return;
+	}
+
+	public void SendAudio(byte[] compressedBytes){
+		_audioFiles.Enqueue (compressedBytes);
+	}
+
+	public bool IsConversationStarted(){
+		return _conversationStarted;
+	}
 
 
 	//  NEW START FUNCTION FOR THE WEBSOCKIFY VERSION
 
 	void Start() {
+		_synth = GetComponent<SpeechSynthesizer>();
+		_listener = GetComponent<SpeechListener> ();
+		_synth.speaking.AddListener (MuteListener);
 		try {
-			mySocket = new WebSocket(new Uri(Host)); // Connect socket on startup
+			//mySocket = new WebSocket(new Uri(Host)); // Connect socket on startup
 
 			//mySocket = new WebSocket(new Uri(Host),['binary', 'base64']); // Base template
 			//mySocket = new WebSocket("ws://localhost:27016", ["base64"]); // Tried this
 			//mySocket = new WebSocket(new Uri(Host), ("binary")); // Tried This - says WebSocket constructor does not take two arguments
 				
 
-			socketReady = true;
+			//socketReady = true;
 		}
 		catch (Exception e) {
 			Debug.Log("Socket error: " + e);
@@ -159,7 +194,9 @@ public class ChatSocket : MonoBehaviour {
 				SendMessage("BuildShapeList", reply);
 				displayTimer = Mathf.Max(7.0f,reply.Length /15 );
 				//Application.ExternalCall("speak", reply);
-				
+
+				//NOTE: we mute recognition using an event callback (MuteListener)
+				_synth.Synthesize(reply);
 				if (reply.Contains("no") || reply.Contains("No") || reply.Contains("never") || reply.Contains("didn't")|| reply.Contains("Not") || reply.Contains("Never") || reply.Contains("not") ) SendMessage("NodNo");
 				if (reply.Contains("yes") || reply.Contains("I am taking") || reply.Contains("of course")|| reply.Contains("Yes") ) SendMessage("NodYes");
 			}
@@ -175,17 +212,32 @@ public class ChatSocket : MonoBehaviour {
 		
 		if (useAutoEntry && endSentenceTimer > endSentenceTime && lineToSend.Length > 0) {
 			reply = "";
-			StartCoroutine(writeSocket(lineToSend));
-			lineToSend = "";
+			StartCoroutine(postQuery(lineToSend));
+			//lineToSend = "";
 			endSentenceTimer = 0.0f;	
 		}
-		
+
+		if (_voice && _audioFiles.Count > 0 && _queryResources.Count > 0) {
+			//assuming (bigly) that audio files and queries come in in the same order.
+			print("Prepping postAudio");
+			string queryURL = _queryResources.Dequeue();
+			string[] toks = queryURL.Split (new Char[]{'/'});
+			string convNum = toks [toks.Length - 4];
+			string qNum = toks [toks.Length - 2];
+			string filename = convNum + "-" + qNum + ".wav";
+			string audioURL =  backendRootURL.TrimEnd(new Char[]{'/'}) + queryURL + "audio";
+			//print (audioURL);
+			//print (filename);
+			StartCoroutine(postAudio(audioURL, _audioFiles.Dequeue(), filename));
+		}
+
 		if (Input.GetKeyDown("up")) inputFieldHeight--;
 		if (Input.GetKeyDown("down")) inputFieldHeight++;
 	}
 	
 	void OnGUI() {
-		if (readyToConnect && socketReady) {
+		//if (readyToConnect && socketReady){
+		if (readyToConnect){
 			GUILayout.BeginArea (new Rect((Screen.width/2)-150 , (Screen.height/2), 300 , 100));
 			GUILayout.BeginVertical("box");
 			
@@ -198,11 +250,14 @@ public class ChatSocket : MonoBehaviour {
 			GUILayout.Label("last name: ");
 			lastName = GUILayout.TextField (lastName, 50, GUILayout.Width(200));
 			GUILayout.EndHorizontal();
+			GUILayout.BeginHorizontal ();
+			_guiVoice = GUILayout.Toggle (_guiVoice, "Voice?");
+			GUILayout.EndHorizontal ();
 			if (lastName.Length > 0 && firstName.Length > 0) {
 				if ( GUILayout.Button("Interview the patient", GUILayout.Width(290)) ) {
 					print ("Name recorded...");
 					lineToSend = "";
-					StartCoroutine(writeSocket(lineToSend));
+					StartCoroutine(startConversation(firstName, lastName, clientID, "far", _guiVoice));
 					readyToConnect = false;
 					connected = true;
 				}
@@ -242,8 +297,8 @@ public class ChatSocket : MonoBehaviour {
 			string str = "\n";
 			if (Event.current.type == EventType.keyDown && Event.current.character == str[0] && lineToSend.Length > 0) {
 				reply = "";
-				StartCoroutine(writeSocket(lineToSend));
-				lineToSend = "";
+				StartCoroutine(postQuery(lineToSend));
+				//lineToSend = "";
 			}
 			GUILayout.EndArea();
 			
@@ -256,8 +311,8 @@ public class ChatSocket : MonoBehaviour {
 				if (GUILayout.Button("Score Me")){
 					reply = "";
 					lineToSend = "score me";
-					StartCoroutine(writeSocket(lineToSend));
-					lineToSend = "";
+					StartCoroutine(postQuery(lineToSend));
+					//lineToSend = "";
 				}
 				
 				GUILayout.EndHorizontal();
@@ -265,7 +320,20 @@ public class ChatSocket : MonoBehaviour {
 			}
 		}
 	}
-	
+
+	public void MuteListener(float duration){
+		print ("Mute called.");
+		StartCoroutine (MuteRecognition (duration));
+	}
+
+	private IEnumerator MuteRecognition(float duration){
+		_listener.Mute = true;
+		yield return new WaitForSeconds (duration);
+		_listener.Mute = false;
+		print ("Un-muted.");
+	}
+				
+	/*
 	IEnumerator writeSocket(string sendLine)
 	{
 		print ("Connecting...");
@@ -274,7 +342,6 @@ public class ChatSocket : MonoBehaviour {
 		string message = firstName+"_"+lastName+":"+PatientChoice +"\0\0"+sendLine+"\0";
 		print ("Sending: " + sendLine);
 		mySocket.SendString(message);
-		
 		receivedText = null;
 		while (receivedText == null) {
 			receivedText = mySocket.RecvString();
@@ -282,7 +349,106 @@ public class ChatSocket : MonoBehaviour {
 		}
 		mySocket.Close();
 	}
-	
+	*/
+
+	[Serializable]
+	private class QueryOut
+	{
+		public string query;
+	}
+
+	[Serializable]
+	private class QueryIn
+	{
+		public string status;
+		public string resource;
+		public string reply;
+	}
+
+	IEnumerator postQuery(string sendLine)
+	{
+		QueryOut parms = new QueryOut ();
+		parms.query = sendLine;
+		byte[] bytes = Encoding.UTF8.GetBytes (JsonUtility.ToJson(parms));
+		Dictionary<String, String> headers = new Dictionary<String, String>();
+		headers.Add ("Content-type", "application/json");
+		string url = backendRootURL + "conversations/" + conversationNum.ToString() + "/query/";
+		print ("Sending \"" + sendLine + "\"");
+		WWW response = new WWW(url, bytes, headers);
+		yield return response;
+		QueryIn reply = JsonUtility.FromJson<QueryIn>(response.text);
+		receivedText = reply.reply;
+		if (_voice) {
+			_queryResources.Enqueue (reply.resource);			
+		}
+		lineToSend = "";
+	}
+
+	[Serializable]
+	private class AudioReceipt{
+		string status;
+		string resource;
+		string info;
+	}
+
+	IEnumerator postAudio(string url, byte[] file, string filename){
+		print ("postAudio called.");
+		WWWForm form = new WWWForm ();
+		form.AddBinaryData ("file", file, filename);
+		WWW response = new WWW (url, form);
+		yield return response;
+		AudioReceipt reply = JsonUtility.FromJson<AudioReceipt> (response.text);
+		yield break;
+	}
+
+	[Serializable]
+	private class NewConvOut
+	{
+		public string client; //currently limited to 8 bytes; that may be dumb.
+		public string first;
+		public string last;
+		public int patient;
+		public string input;
+		public string mic;
+	}
+
+	[Serializable]
+	private class NewConvIn
+	{
+		public string status;
+		public string resource;
+		public int conversation_num;
+		public string greeting;
+	}
+
+	IEnumerator startConversation(string first, string last, string client, string mic, bool voice)
+	{
+		if (voice) {
+			_voice = true;
+		}
+		NewConvOut parms = new NewConvOut ();
+		parms.first = first;
+		parms.last = last;
+		parms.client = client;
+		parms.mic = mic;
+		parms.input = (voice ? "voice" : "text");
+		parms.patient = 1;
+		print (JsonUtility.ToJson (parms));
+		byte[] bytes = Encoding.UTF8.GetBytes (JsonUtility.ToJson(parms));
+		Dictionary<String, String> headers = new Dictionary<String, String>();
+		headers.Add ("Content-type", "application/json");
+		string url = backendRootURL + "conversations/";
+		print ("Creating conversation...");
+		WWW response = new WWW(url, bytes, headers);
+		yield return response;
+		print (response.text);
+		NewConvIn reply = JsonUtility.FromJson<NewConvIn>(response.text);
+		//TODO handle case where backend is down!
+		conversationNum = reply.conversation_num;
+		receivedText = reply.greeting;
+		_conversationStarted = true;
+	}
+
 	void ScoreMe () {
 		//StartCoroutine (GetFile ("https://urldefense.proofpoint.com/v2/url?u=http-3A__128.146.170.201_Scores_&d=BQIGAg&c=k9MF1d71ITtkuJx-PdWme51dKbmfPEvxwt8SFEkBfs4&r=plf_0nhsT82-Rnct6ZKJEHLGxgh5eePcapAP3pB2NKs&m=91hnWTeMIutQ7xSVrsnSPGG6zfFxKRrRazmBKDJ9y2Y&s=lGiaSFzXp8D4Y1zR4owDMAKsjRch-h4uF1w86JhfmEA&e= " + firstName + "_" + lastName + ".txt"));
 		StartCoroutine (GetFile ("http://127.0.0.1/Scores/" + firstName + "_" + lastName + ".txt"));

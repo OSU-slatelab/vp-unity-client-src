@@ -127,12 +127,12 @@ private var lastShape : AnimationClip;
 
 
 function Awake() {
-	#if UNITY_WEBPLAYER
-		GetComponent(VoiceSpeaker).enabled = false;
-	#endif
-	#if UNITY_STANDALONE_WIN
-		GetComponent(VoiceSpeaker).enabled = true;
-	#endif
+//	#if UNITY_WEBPLAYER
+//		GetComponent(VoiceSpeaker).enabled = false;
+//	#endif
+//	#if UNITY_STANDALONE_WIN
+//		GetComponent(VoiceSpeaker).enabled = true;
+//	#endif
 }
 
 // END AWAKE()  -------------------------------------------------------
@@ -650,9 +650,9 @@ function BuildShapeList(input : String) {
 			}
 		}
 		if (audioClipFound) GetComponent.<AudioSource>().Play();
-		else if (GetComponent(VoiceSpeaker).enabled && useTTS_asBackup) SendMessage ("SpeakThis", input);
+		//else if (GetComponent(VoiceSpeaker).enabled && useTTS_asBackup) SendMessage ("SpeakThis", input);
 	}
-	else if (GetComponent(VoiceSpeaker).enabled) SendMessage ("SpeakThis", input);
+	//else if (GetComponent(VoiceSpeaker).enabled) SendMessage ("SpeakThis", input);
 
 	LockEyes(true);
 

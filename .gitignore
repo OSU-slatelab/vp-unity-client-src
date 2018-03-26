@@ -3,6 +3,8 @@ Editor
 Prefabs
 Scenes
 Standard\ Assets
+Resources/stt_creds.json
+Resources/tts_creds.json
 
 **.meta
 **.dll
