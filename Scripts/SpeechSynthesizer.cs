@@ -67,7 +67,7 @@ public class SpeechSynthesizer : MonoBehaviour {
 
 	private void OnSynthesize(AudioClip clip, Dictionary<string, object> customData)
 	{
-		speaking.Invoke (clip.length);
+		speaking.Invoke (clip.length + 0.25f);
 		Log.Debug("SpeechSynthesizer.OnSynthesize()", " called.");
 		PlayClip(clip);
 	}

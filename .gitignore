@@ -5,6 +5,7 @@ Scenes
 Standard\ Assets
 Resources/stt_creds.json
 Resources/tts_creds.json
+Scripts/.DS_Store
 
 **.meta
 **.dll

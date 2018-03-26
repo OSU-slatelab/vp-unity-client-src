@@ -142,7 +142,7 @@ public class EchoTest : MonoBehaviour {
 			lineToSend = GUILayout.TextField (lineToSend);
 			GUILayout.EndHorizontal();
 			string str = "\n";
-			if (Event.current.type == EventType.keyDown && Event.current.character == str[0] && lineToSend.Length > 0) {
+			if (Event.current.type == EventType.KeyDown && Event.current.character == str[0] && lineToSend.Length > 0) {
 				reply = "";
 				writeSocket(lineToSend);
 				lineToSend = "";

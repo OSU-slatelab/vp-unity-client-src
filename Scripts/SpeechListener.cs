@@ -20,9 +20,13 @@ public class SpeechListener : MonoBehaviour {
 	private bool _ongoingRecognition = false;
 	private bool _save = false;
 	private List<float> _utterance = new List<float> ();
-	private bool _mute = false;
+	private bool _mute = true;
 	private bool _startedMute = false;
-
+	private string _to_send = "";
+	private bool _maybe_done = false;
+	private float _done_timer = 0f;
+	private float _done_threshold = 0.5f;
+	private Credentials _credentials;
 	private ChatSocket _cs = null;
 	//public Text ResultsField;
 
@@ -46,16 +50,48 @@ public class SpeechListener : MonoBehaviour {
 		//  Create credential and instantiate service
 		Utility.GetToken (OnGetToken, creds.url, creds.username, creds.password);
 		yield return new WaitUntil (() => _authenticationToken != null);
-		Credentials credentials = new Credentials(creds.url){
+		_credentials = new Credentials(creds.url){
 			AuthenticationToken = _authenticationToken.Token
 		};
 
-		_speechToText = new SpeechToText(credentials);
-		yield return new WaitUntil (_cs.IsConversationStarted);
+		_speechToText = new SpeechToText(_credentials);
+		yield return new WaitForSeconds (1);
 		this.Active = true;
 
 		StartRecording();
 		Log.Debug("SpeechListener.Start()", "SpeechToText.isListening: {0}", _speechToText.IsListening);
+	}
+
+	public void Update(){
+		if (_maybe_done) {
+			if (_done_timer > _done_threshold) { //indeed done
+				//TODO mute further recognition?
+				_cs.SendQuery (_to_send);
+				_ongoingRecognition = false;
+				_save = true;
+				_to_send = "";
+				_done_timer = 0f;
+				_maybe_done = false;
+			} else {
+				_done_timer += Time.deltaTime;
+			}
+		}
+
+	}
+
+	public void OnDisable(){
+		StopRecording ();
+		this.Active = false;
+		_speechToText = null;
+	}
+
+	public void OnEnable() {
+		if (_credentials != null) {
+			_speechToText = new SpeechToText (_credentials);
+			this.Mute = true;
+			this.Active = true;
+			StartRecording ();
+		}
 	}
 
 	public bool Active
@@ -158,6 +194,7 @@ public class SpeechListener : MonoBehaviour {
 				if (!_ongoingRecognition) {
 					if (_save) {
 						StartCoroutine (ConvertAndSend (_utterance.ToArray (), _recording.frequency, _recording.channels));
+						_utterance.Clear ();
 						_save = false;
 					} 
 					//buffer the most recent round of samples
@@ -204,10 +241,11 @@ public class SpeechListener : MonoBehaviour {
 				{
 					if (res.final) {
 						_cs.ShowRecognitionResult (alt.transcript);
-						_cs.SendQuery (alt.transcript);
-						_ongoingRecognition = false;
-						_save = true;
+						_maybe_done = true;
+						_to_send += alt.transcript;
 					} else {
+						_maybe_done = false;
+						_done_timer = 0f;
 						_ongoingRecognition = true;
 						_cs.ShowRecognitionResult (alt.transcript);
 					}
