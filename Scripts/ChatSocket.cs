@@ -1,5 +1,6 @@
 using System;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEngine; 
 using System.Collections;
 using System.Collections.Generic;
@@ -37,7 +38,7 @@ public class ChatSocket : MonoBehaviour {
 
 
 	// WEBSERVICE CONSTANTS
-	private static string clientID = "iOS-1.0";
+	private static string clientID = "iOS-1.1";
 	private static string backendRootURL = "https://boulder.cse.ohio-state.edu/";
 	//private static string backendRootURL = "http://127.0.0.1:5000/";
 
@@ -166,7 +167,7 @@ public class ChatSocket : MonoBehaviour {
 	}
 
 	public void ShowRecognitionResult(string recognized){
-		lineToSend = recognized;
+		lineToSend = Regex.Replace(recognized, @"\b\S+\b", "\u2022");
 	}
 
 	public void SendQuery(string query){
