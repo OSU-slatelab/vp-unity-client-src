@@ -26,6 +26,8 @@ public class ChatSocket : MonoBehaviour {
 	private bool _voice = true;
 	private bool _guiVoice = true;
 	public Boolean ScoringToggle = false;
+	private string _csOOBstart = "\\[";
+	private string _csOOBend = "\\]";
 	private static string instructions = "Please interview Mr. Jack Wilson, who is here for back pain.\n" +
 	                                     "\n" +
 	                                     "You should obtain a complete medical history, including History of Present Illness, " +
@@ -55,6 +57,7 @@ public class ChatSocket : MonoBehaviour {
 	private string firstName = "";
 	private string lastName = "";
 	private int conversationNum = -1;
+	private int _patientSelection = -1;
 	private string _uuid = "";
 	private string _json = "";
 	private string _audio_json = "";
@@ -65,6 +68,8 @@ public class ChatSocket : MonoBehaviour {
 	// - process flow
 	public static Boolean readyToConnect = true;
 	private Boolean connected = false;
+	private bool _configuring = false;
+	private bool _configured = false;
 	private bool _conversationStarted = false;
 	private bool _game_over = false;
 	private Boolean error = false;
@@ -73,7 +78,8 @@ public class ChatSocket : MonoBehaviour {
 	private float _muteTimer = 0.0f;
 
 	// Component references
-	private SpeechSynthesizer _synth = null;
+	private GameObject _patient = null;
+	private SpeechProducer _speaker = null;
 	private SpeechListener _listener = null;
 
 
@@ -188,12 +194,11 @@ public class ChatSocket : MonoBehaviour {
 	//  NEW START FUNCTION FOR THE WEBSOCKIFY VERSION
 
 	IEnumerator Start() {
-		_synth = GetComponent<SpeechSynthesizer>();
+		_patient = this.gameObject;
 		_listener = GetComponent<SpeechListener> ();
-		_synth.speaking.AddListener (MuteListener);
 		yield return new WaitForSeconds (2);
-		firstName = "iOSuser";
-		lastName = System.DateTime.Now.ToString("yyyyMMddHHmmss");
+//		firstName = "iOSuser";
+//		lastName = System.DateTime.Now.ToString("yyyyMMddHHmmss");
 		try {
 			//mySocket = new WebSocket(new Uri(Host)); // Connect socket on startup
 
@@ -219,6 +224,7 @@ public class ChatSocket : MonoBehaviour {
 			if (_muteTimer > 0) {
 				_muteTimer -= Time.deltaTime;
 			} else {
+				print ("unmuting.");
 				_listener.Mute = false;
 				_muting = false;
 			}
@@ -227,10 +233,10 @@ public class ChatSocket : MonoBehaviour {
 			print ("Received: " + receivedText);
 			reply = receivedText; // ...set the reply to that text.
 			receivedText = "";
-			if ( reply.Contains("[") ) {
-				string emotion = reply.Substring( reply.IndexOf("[")+1, reply.IndexOf("]")-1  );
+			if ( reply.Contains(_csOOBstart) ) {
+				string emotion = reply.Substring( reply.IndexOf(_csOOBstart) + _csOOBstart.Length, reply.IndexOf(_csOOBend) - 1 );
 				SendMessage("ExpressEmotion", emotion);
-				reply = reply.Substring(reply.IndexOf("]")+1) ;
+				reply = reply.Substring(reply.IndexOf(_csOOBend) + _csOOBend.Length ) ;
 			}
 			if (reply.Contains("/openCurly/")) {
 				connected = false;
@@ -244,7 +250,7 @@ public class ChatSocket : MonoBehaviour {
 				//Application.ExternalCall("speak", reply);
 
 				//NOTE: we mute recognition using an event callback (MuteListener)
-				_synth.Synthesize(reply);
+				_speaker.Say(reply);
 				if (reply.Contains("no") || reply.Contains("No") || reply.Contains("never") || reply.Contains("didn't")|| reply.Contains("Not") || reply.Contains("Never") || reply.Contains("not") ) SendMessage("NodNo");
 				if (reply.Contains("yes") || reply.Contains("I am taking") || reply.Contains("of course")|| reply.Contains("Yes") ) SendMessage("NodYes");
 			}
@@ -287,29 +293,35 @@ public class ChatSocket : MonoBehaviour {
 			GUI.skin.textField.fontSize = 28;
 			GUI.skin.button.fontSize = 28;
 			GUI.skin.label.fontSize = 28;
-			int boxwidth = 600;
-			int boxheight = 800;
+// Intro text sizes
+//			int boxwidth = 600;
+//			int boxheight = 800;
+//			int labelwidth = 150;
+// Name capture sizes
+			int boxwidth = 400;
+			int boxheight = 150;
 			int labelwidth = 150;
-			GUILayout.BeginArea (new Rect((Screen.width/2)-(boxwidth/2) , (Screen.height/4), boxwidth , boxheight));
+//			GUILayout.BeginArea (new Rect((Screen.width/2)-(boxwidth/2) , (Screen.height/4), boxwidth , boxheight));
+			GUILayout.BeginArea (new Rect((Screen.width/2)-(boxwidth/2) , (Screen.height/3), boxwidth , boxheight));
 			GUILayout.BeginVertical("box");
 // Introductory text
-			GUILayout.BeginHorizontal();
+/*			GUILayout.BeginHorizontal();
 			GUILayout.Label (instructions);
 			GUILayout.EndHorizontal ();
-
+*/
 // Name capture
-/*			GUILayout.BeginHorizontal();
+			GUILayout.BeginHorizontal();
 			GUILayout.Label("first name: ");
 			GUILayoutOption[] textopts = new GUILayoutOption[2];
 			textopts [0] = GUILayout.Width (boxwidth - labelwidth - 10);
-			textopts [1] = GUILayout.Height (boxheight / 3 - 5);
+			textopts [1] = GUILayout.Height (boxheight / 3 - 10);
 			firstName = GUILayout.TextField (firstName, labelwidth, textopts);
 			GUILayout.EndHorizontal();
 			
 			GUILayout.BeginHorizontal();
 			GUILayout.Label("last name: ");
 			lastName = GUILayout.TextField (lastName, labelwidth, textopts);
-			GUILayout.EndHorizontal(); */
+			GUILayout.EndHorizontal(); 
 //			GUILayout.BeginHorizontal ();
 //			_guiVoice = GUILayout.Toggle (_guiVoice, "Voice?");
 //			GUILayout.EndHorizontal ();
@@ -321,16 +333,35 @@ public class ChatSocket : MonoBehaviour {
 					// clean names to facilitate pdf generation.
 					firstName = firstName.Trim ();
 					lastName = lastName.Trim ();
-					print ("Name recorded...");
-					lineToSend = "";
-					StartCoroutine(startConversation(firstName, lastName, clientID, "far", _guiVoice));
+					string setup = "default";
+					if (firstName == "Stimpson J." && lastName == "Cat") {
+						setup = "test";
+					}
+					StartCoroutine (Configure (setup));
+					_configuring = true;
 					readyToConnect = false;
-					connected = true;
+//					print ("Name recorded...");
+//					lineToSend = "";
+//					StartCoroutine(startConversation(firstName, lastName, clientID, "far", _guiVoice));
+//					readyToConnect = false;
+//					connected = true;
 				}
 			}
 			GUILayout.EndVertical();
 			GUILayout.EndArea();
 		}
+
+		if (_configuring) {
+			ShowLoadMessage ();
+		}
+
+		if (_configured) {
+			lineToSend = "";
+			StartCoroutine(startConversation(firstName, lastName, clientID, "far", _guiVoice, _patientSelection));
+			_configured = false;
+			connected = true;
+		}
+
 		// subtitles centered on screen
 		if (connected && reply != "" && displayTimer > 0 && showReplies){
 			GUILayout.BeginArea( new Rect(Mathf.Max(20,(Screen.width/2) - (GUI.skin.label.fontSize * reply.Length/4)),
@@ -426,6 +457,17 @@ public class ChatSocket : MonoBehaviour {
 		}
 	}
 
+	private void ShowLoadMessage(){
+		string loadMsg = "Loading...";
+		GUILayout.BeginArea( new Rect(Mathf.Max(20,(Screen.width/2) - (GUI.skin.label.fontSize * loadMsg.Length/4)),
+			((Screen.height -Mathf.Ceil((GUI.skin.label.fontSize/2*loadMsg.Length /(Screen.width - 40))+1)* (GUI.skin.label.fontSize + 5)- 40)/2)+subTitleHeightAdjust,
+			Mathf.Min(Screen.width - 20, loadMsg.Length *GUI.skin.label.fontSize/2 ), 600));
+		GUILayout.BeginHorizontal("box");
+		GUILayout.Label(loadMsg, customLabelGUI);
+		GUILayout.EndHorizontal();
+		GUILayout.EndArea();
+	}
+
 	private IEnumerator CheckListening(){
 		_checkListening = true;
 		if (_listener != null && _listener.enabled && !_listener.Active) {
@@ -445,7 +487,7 @@ public class ChatSocket : MonoBehaviour {
 	private void Restart(){
 		Time.timeScale = 1;
 		_listener.enabled = true;
-		_synth.enabled = true;
+		_speaker.enabled = true;
 		_game_over = false;
 		readyToConnect = true;
 		conversationNum = -1;
@@ -468,11 +510,31 @@ public class ChatSocket : MonoBehaviour {
 */
 	private void GameOver(){
 		_listener.enabled = false;
-		_synth.enabled = false;
+		_speaker.enabled = false;
 		Time.timeScale = 0;
 		_game_over = true;
 		connected = false;
 	}
+
+	private IEnumerator GetJSON (string url){
+		using (UnityWebRequest request = new UnityWebRequest (url)) {
+			//request.uploadHandler = new UploadHandlerRaw ();
+			request.downloadHandler = new DownloadHandlerBuffer ();
+			request.chunkedTransfer = false;
+			request.method = UnityWebRequest.kHttpVerbGET;
+			request.SetRequestHeader ("Content-type", "application/json");
+			yield return request.SendWebRequest ();
+			if (request.isNetworkError || request.isHttpError) {
+				print (request.error);
+			} else {
+				_json = request.downloadHandler.text;
+			}
+		}
+
+
+	}
+
+
 
 	private IEnumerator PostJSON (string url, byte[] bytes){
 		using (UnityWebRequest request = new UnityWebRequest (url)) {
@@ -531,6 +593,57 @@ public class ChatSocket : MonoBehaviour {
 	}
 	*/
 
+
+	[Serializable]
+	private class ConfigIn
+	{
+		public string speaker;
+		public string patient;
+		public string avatar;
+		public bool oobhack;
+	}
+
+	IEnumerator Configure(string setup)
+	{
+		string clientID = "iOS";
+		string url = backendRootURL + "config/?client=" + clientID + "&setup=" + setup;
+		yield return GetJSON(url);
+		ConfigIn reply = JsonUtility.FromJson<ConfigIn>(_json);
+		_json = "";
+		// instantiate speaker
+		if (reply.speaker == "watson-tts") {
+			_speaker = _patient.AddComponent<WatsonSpeechSynthesizer> ();
+		} else if (reply.speaker == "rec-embed") {
+			// instantiate embedded pre-recorded wav lookup
+			_speaker = _patient.AddComponent<EmbeddedWavLookup> ();
+		} else if (reply.speaker == "google-tts") {
+			// instantiate google text-to-speech
+			// (not implemented)
+		} else if (reply.speaker == "rec-service") {
+			// instantiate pre-recorded wav server lookup
+			_speaker = _patient.AddComponent<AssetBundleWavLookup> ();
+		} else {
+			// default or error?
+		}
+
+		if (!Int32.TryParse(reply.patient, out _patientSelection) ){
+			// if return value from service is not parseable, we default to patient2
+			_patientSelection = 2;
+		}
+
+		// default is true
+		if (!reply.oobhack) {
+			_csOOBstart = "[";
+			_csOOBend = "]";
+		}
+
+		yield return new WaitForSeconds (2);
+		_speaker.speaking.AddListener (MuteListener);
+		_configuring = false;
+		_configured = true;
+
+	}
+
 	[Serializable]
 	private class QueryOut
 	{
@@ -559,6 +672,7 @@ public class ChatSocket : MonoBehaviour {
 		//yield return response;
 		yield return PostJSON(url, bytes);
 		QueryIn reply = JsonUtility.FromJson<QueryIn>(_json);
+		print (_json);
 		_json = "";
 		receivedText = reply.reply;
 		if (_voice) {
@@ -606,7 +720,7 @@ public class ChatSocket : MonoBehaviour {
 		public string uuid;
 	}
 
-	IEnumerator startConversation(string first, string last, string client, string mic, bool voice)
+	IEnumerator startConversation(string first, string last, string client, string mic, bool voice, int patientSelection)
 	{
 		if (voice) {
 			_voice = true;
@@ -617,15 +731,11 @@ public class ChatSocket : MonoBehaviour {
 		parms.client = client;
 		parms.mic = mic;
 		parms.input = (voice ? "voice" : "text");
-		parms.patient = 2;
+		parms.patient = patientSelection;
 		print (JsonUtility.ToJson (parms));
 		byte[] bytes = Encoding.UTF8.GetBytes (JsonUtility.ToJson(parms));
-//		Dictionary<String, String> headers = new Dictionary<String, String>();
-//		headers.Add ("Content-type", "application/json");
 		string url = backendRootURL + "conversations/";
 		print ("Creating conversation...");
-//		WWW response = new WWW(url, bytes, headers);
-//		yield return response;
 		yield return PostJSON(url, bytes);
 		NewConvIn reply = JsonUtility.FromJson<NewConvIn>(_json);
 		_json = "";

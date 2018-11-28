@@ -25,9 +25,10 @@ public class SpeechListener : MonoBehaviour {
 	private string _to_send = "";
 	private bool _maybe_done = false;
 	private float _done_timer = 0f;
-	private float _done_threshold = 0.5f;
+	private float _done_threshold = 0.75f;
 	private Credentials _credentials;
 	private ChatSocket _cs = null;
+	private Dictionary<string, object> empty_dict = new Dictionary<string,object> ();
 	//public Text ResultsField;
 
 	private SpeechToText _speechToText;
@@ -48,24 +49,20 @@ public class SpeechListener : MonoBehaviour {
 		CredText creds = JsonUtility.FromJson<CredText>(jsonCredText.text);
 
 		//  Create credential and instantiate service
-		Utility.GetToken (OnGetToken, creds.url, creds.username, creds.password);
-		yield return new WaitUntil (() => _authenticationToken != null);
-		_credentials = new Credentials(creds.url){
-			AuthenticationToken = _authenticationToken.Token
-		};
-
+		_credentials = new Credentials(creds.username, creds.password, creds.url);
 		_speechToText = new SpeechToText(_credentials);
+
 		yield return new WaitForSeconds (1);
 		this.Active = true;
-
 		StartRecording();
 		Log.Debug("SpeechListener.Start()", "SpeechToText.isListening: {0}", _speechToText.IsListening);
 	}
 
+
 	public void Update(){
 		if (_maybe_done) {
 			if (_done_timer > _done_threshold) { //indeed done
-				//TODO mute further recognition?
+				this.Mute = true;
 				_cs.SendQuery (_to_send);
 				_ongoingRecognition = false;
 				_save = true;
@@ -80,12 +77,14 @@ public class SpeechListener : MonoBehaviour {
 	}
 
 	public void OnDisable(){
+		Log.Debug("SpeechListener.OnDisable()", "called", new object[]{});
 		StopRecording ();
 		this.Active = false;
 		_speechToText = null;
 	}
 
 	public void OnEnable() {
+		Log.Debug("SpeechListener.OnEnable()", "called", new object[]{});
 		if (_credentials != null) {
 			_speechToText = new SpeechToText (_credentials);
 			this.Mute = true;
@@ -101,6 +100,7 @@ public class SpeechListener : MonoBehaviour {
 		{
 			if (value && !_speechToText.IsListening)
 			{
+				Log.Debug("SpeechListener.Active", "set true", new object[]{});
 				_speechToText.DetectSilence = true;
 				_speechToText.EnableWordConfidence = true;
 				_speechToText.EnableTimestamps = true;
@@ -113,7 +113,7 @@ public class SpeechListener : MonoBehaviour {
 				_speechToText.SmartFormatting = true;
 				_speechToText.SpeakerLabels = false;
 				_speechToText.WordAlternativesThreshold = null;
-				_speechToText.StartListening(OnRecognize);
+				_speechToText.StartListening(OnRecognize, OnRecognizeSpeaker, empty_dict);
 			}
 			else if (!value && _speechToText.IsListening)
 			{
@@ -128,15 +128,15 @@ public class SpeechListener : MonoBehaviour {
 		set { _mute = value; }
 	}
 		
-	private void OnGetToken(AuthenticationToken authenticationToken, string customData)
-	{
-		_authenticationToken = authenticationToken;
-		Log.Debug("SpeechListener.OnGetToken()", "created: {0} | time to expiration: {1} minutes | token: {2}", _authenticationToken.Created, _authenticationToken.TimeUntilExpiration, _authenticationToken.Token);
-	}
+//	private void OnGetToken(AuthenticationToken authenticationToken, string customData)
+//	{
+//		_authenticationToken = authenticationToken;
+//		Log.Debug("SpeechListener.OnGetToken()", "created: {0} | time to expiration: {1} minutes | token: {2}", _authenticationToken.Created, _authenticationToken.TimeUntilExpiration, _authenticationToken.Token);
+//	}
 
 	private void StartRecording()
 	{
-		print ("Recording.");
+		Log.Debug("SpeechListener.StartRecording()", "called", new object[]{});
 		if (_recordingRoutine == 0)
 		{
 			UnityObjectUtil.StartDestroyQueue();
@@ -146,6 +146,7 @@ public class SpeechListener : MonoBehaviour {
 
 	private void StopRecording()
 	{
+		Log.Debug("SpeechListener.StopRecording()", "called", new object[]{});
 		if (_recordingRoutine != 0)
 		{
 			Microphone.End(_microphoneID);
@@ -164,6 +165,7 @@ public class SpeechListener : MonoBehaviour {
 	private IEnumerator RecordingHandler()
 	{
 		Log.Debug("ExampleStreaming.RecordingHandler()", "devices: {0}", Microphone.devices);
+		_microphoneID = Microphone.devices [0];
 		_recording = Microphone.Start(_microphoneID, true, _recordingBufferSize, _recordingHZ);
 		yield return null;      // let _recordingRoutine get set..
 
@@ -177,10 +179,10 @@ public class SpeechListener : MonoBehaviour {
 		//bool saveChecked = false;
 		int midPoint = _recording.samples / 2;
 		float[] samples = null;
-
 		while (_recordingRoutine != 0 && _recording != null)
 		{
 			int writePos = Microphone.GetPosition(_microphoneID);
+			//Log.Debug("ExampleStreaming.RecordingHandler()", "writePos: {0}", writePos);
 			if (writePos > _recording.samples || !Microphone.IsRecording(_microphoneID))
 			{
 				Log.Error("ExampleStreaming.RecordingHandler()", "Microphone disconnected.");
@@ -213,7 +215,6 @@ public class SpeechListener : MonoBehaviour {
 					record.MaxLevel = Mathf.Max (Mathf.Abs (Mathf.Min (samples)), Mathf.Max (samples));
 					record.Clip = AudioClip.Create ("Recording", midPoint, _recording.channels, _recordingHZ, false);
 					record.Clip.SetData (samples, 0);
-
 					_speechToText.OnListen (record);
 				}
 				_startedMute = _mute;
@@ -231,7 +232,7 @@ public class SpeechListener : MonoBehaviour {
 		yield break;
 	}
 
-	private void OnRecognize(SpeechRecognitionEvent result)
+	private void OnRecognize(SpeechRecognitionEvent result, Dictionary<string, object> customData)
 	{
 		if (result != null && result.results.Length > 0)
 		{
@@ -256,6 +257,18 @@ public class SpeechListener : MonoBehaviour {
 			}
 		}
 	}
+
+	private void OnRecognizeSpeaker(SpeakerRecognitionEvent result, Dictionary<string, object> customData)
+	{
+		//if (result != null)
+		//{
+		//	foreach (SpeakerLabelsResult labelResult in result.speaker_labels)
+		//	{
+		//		Log.Debug("ExampleStreaming.OnRecognize()", string.Format("speaker result: {0} | confidence: {3} | from: {1} | to: {2}", labelResult.speaker, labelResult.from, labelResult.to, labelResult.confidence));
+		//	}
+		//}
+	}
+
 
 	IEnumerator ConvertAndSend(float[] samples, int hz, int channels){
 		Log.Debug("SpeechListener.ConvertAndSend()", "samples: {0}", samples.Length);
