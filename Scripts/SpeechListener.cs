@@ -1,10 +1,10 @@
 ﻿using System;
 using UnityEngine;
 using System.Collections;
-using IBM.Watson.DeveloperCloud.Logging;
-using IBM.Watson.DeveloperCloud.Services.SpeechToText.v1;
-using IBM.Watson.DeveloperCloud.Utilities;
-using IBM.Watson.DeveloperCloud.DataTypes;
+using IBM.Watson.SpeechToText.V1;
+using IBM.Cloud.SDK;
+using IBM.Cloud.SDK.Utilities;
+using IBM.Cloud.SDK.DataTypes;
 using System.Collections.Generic;
 using UnityEngine.UI;
 using System.IO.Compression;
@@ -26,12 +26,16 @@ public class SpeechListener : MonoBehaviour {
 	private bool _maybe_done = false;
 	private float _done_timer = 0f;
 	private float _done_threshold = 0.75f;
+	private float _max_done_thresh = 1.5f;
+	private float _min_done_thresh = 0.5f;
+	private int _max_thresh_len = 8;
+	private float _thresh_step;
 	private Credentials _credentials;
 	private ChatSocket _cs = null;
 	private Dictionary<string, object> empty_dict = new Dictionary<string,object> ();
 	//public Text ResultsField;
 
-	private SpeechToText _speechToText;
+	private SpeechToTextService _speechToText;
 
 	[Serializable]
 	private class CredText
@@ -44,13 +48,14 @@ public class SpeechListener : MonoBehaviour {
 	IEnumerator Start()
 	{
 		_cs = GetComponent<ChatSocket> ();
+		_thresh_step = (_max_done_thresh - _min_done_thresh) / (float)_max_thresh_len;
 		LogSystem.InstallDefaultReactors();
 		TextAsset jsonCredText = Resources.Load ("stt_creds") as TextAsset;
 		CredText creds = JsonUtility.FromJson<CredText>(jsonCredText.text);
 
 		//  Create credential and instantiate service
 		_credentials = new Credentials(creds.username, creds.password, creds.url);
-		_speechToText = new SpeechToText(_credentials);
+		_speechToText = new SpeechToTextService(_credentials);
 
 		yield return new WaitForSeconds (1);
 		this.Active = true;
@@ -86,7 +91,7 @@ public class SpeechListener : MonoBehaviour {
 	public void OnEnable() {
 		Log.Debug("SpeechListener.OnEnable()", "called", new object[]{});
 		if (_credentials != null) {
-			_speechToText = new SpeechToText (_credentials);
+			_speechToText = new SpeechToTextService (_credentials);
 			this.Mute = true;
 			this.Active = true;
 			StartRecording ();
@@ -113,7 +118,7 @@ public class SpeechListener : MonoBehaviour {
 				_speechToText.SmartFormatting = true;
 				_speechToText.SpeakerLabels = false;
 				_speechToText.WordAlternativesThreshold = null;
-				_speechToText.StartListening(OnRecognize, OnRecognizeSpeaker, empty_dict);
+				_speechToText.StartListening(OnRecognize, OnRecognizeSpeaker);
 			}
 			else if (!value && _speechToText.IsListening)
 			{
@@ -232,7 +237,7 @@ public class SpeechListener : MonoBehaviour {
 		yield break;
 	}
 
-	private void OnRecognize(SpeechRecognitionEvent result, Dictionary<string, object> customData)
+	private void OnRecognize(SpeechRecognitionEvent result)
 	{
 		if (result != null && result.results.Length > 0)
 		{
@@ -247,8 +252,10 @@ public class SpeechListener : MonoBehaviour {
 					} else {
 						_maybe_done = false;
 						_done_timer = 0f;
+						int effective_length = Math.Min ((_to_send+alt.transcript).Split ().Length, _max_thresh_len);
+						_done_threshold = _max_done_thresh - (effective_length * _thresh_step);
 						_ongoingRecognition = true;
-						_cs.ShowRecognitionResult (alt.transcript);
+						_cs.ShowRecognitionResult (_to_send+alt.transcript);
 					}
 					string text = string.Format("{0} ({1}, {2:0.00})\n", alt.transcript, res.final ? "Final" : "Interim", alt.confidence);
 					Log.Debug("ExampleStreaming.OnRecognize()", text);
@@ -258,7 +265,7 @@ public class SpeechListener : MonoBehaviour {
 		}
 	}
 
-	private void OnRecognizeSpeaker(SpeakerRecognitionEvent result, Dictionary<string, object> customData)
+	private void OnRecognizeSpeaker(SpeakerRecognitionEvent result)
 	{
 		//if (result != null)
 		//{

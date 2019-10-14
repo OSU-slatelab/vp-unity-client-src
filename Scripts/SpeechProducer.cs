@@ -13,7 +13,11 @@ public abstract class SpeechProducer : MonoBehaviour, ISpeaker {
 
 	public SpeakingEvent speaking = new SpeakingEvent();
 
-	public abstract void Say (string text);
+	public abstract bool loaded { get; }
+
+    public string voice = null;
+
+    public abstract void Say (string text);
 
 
 }

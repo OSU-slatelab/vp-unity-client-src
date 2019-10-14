@@ -14,22 +14,40 @@ public class AssetBundleWavLookup : SpeechProducer	{
 	private IDictionary<string, List<string>> _map = null;
 	System.Random rng;
 
+	private bool _done_loading = false;
+
+	public override bool loaded {
+		get {
+			return _done_loading;
+		}
+	}
+
 
 
 	IEnumerator Start () {
-		UnityWebRequest www = UnityWebRequest.GetAssetBundle("https://boulder.cse.ohio-state.edu/static/testaudio");
-		yield return www.SendWebRequest();
+        yield return voice;
+		if (_map == null) {
+			Debug.Log ("Initializing audio map.");
+            string bundleUrl = null;
+            if (voice == "vlad") {
+                bundleUrl = "https://boulder.cse.ohio-state.edu/static/martinezaudio";
+            } else if (voice == "michaelV3") {
+                bundleUrl = "https://boulder.cse.ohio-state.edu/static/michaelaudio";
+            }
+            UnityWebRequest www = UnityWebRequestAssetBundle.GetAssetBundle (bundleUrl);
+			yield return www.SendWebRequest ();
 
-		if(www.isNetworkError || www.isHttpError) {
-			Debug.Log(www.error);
-		}
-		else {
-			_bundle = DownloadHandlerAssetBundle.GetContent(www);
-		}
-		TextAsset mapJson = _bundle.LoadAsset ("answer_sound_map") as TextAsset;
+			if (www.isNetworkError || www.isHttpError) {
+				Debug.Log (www.error);
+			} else {
+				_bundle = DownloadHandlerAssetBundle.GetContent (www);
+			}
+			TextAsset mapJson = _bundle.LoadAsset ("answer_sound_map") as TextAsset;
 //		_map = (IDictionary<string, IList<string>>) JsonConvert.DeserializeObject (mapJson.text, typeof(Dictionary < string, List<string>>));
-		_map = JsonConvert.DeserializeObject<Dictionary < string, List<string>>> (mapJson.text);
+			_map = JsonConvert.DeserializeObject<Dictionary < string, List<string>>> (mapJson.text);
+		}
 		rng = new System.Random ();
+		_done_loading = true;
 	}
 
 	void Update () {
@@ -75,16 +93,11 @@ public class AssetBundleWavLookup : SpeechProducer	{
 	}
 
 	private string NormalizeText(string text){
-		print (text);
 		text = text.Trim ();
-		print (text);
 		text = text.Replace(".", null).Replace(",", null).Replace("?",null);
-		print (text);
 		text = text.ToLower ();
-		print (text);
 		string[] toks = text.Split (new char[]{' '}, StringSplitOptions.RemoveEmptyEntries);
 		text = String.Join (" ", toks);
-		print (text);
 		return text;
 	}
 		

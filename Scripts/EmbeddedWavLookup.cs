@@ -10,12 +10,20 @@ public class EmbeddedWavLookup : SpeechProducer	{
 	AudioClip scream1;
 	AudioClip scream2;
 	System.Random rng;
+	private bool _done_loading = false;
 
+	public override bool loaded {
+		get {
+			return _done_loading;
+		}
+	}
+		
 	void Start () {
 		print ("Loading test audio.");
 		scream1 = Resources.Load ("Wilhelm_Scream") as AudioClip;
 		scream2 = Resources.Load ("The_Howie_Long_Scream") as AudioClip;
 		rng = new System.Random ();
+		_done_loading = true;
 	}
 
 	void Update () {

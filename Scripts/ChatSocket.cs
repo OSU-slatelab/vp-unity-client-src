@@ -40,7 +40,7 @@ public class ChatSocket : MonoBehaviour {
 
 
 	// WEBSERVICE CONSTANTS
-	private static string clientID = "iOS-1.1";
+	private static string clientID = "iOS-2.0";
 	private static string backendRootURL = "https://boulder.cse.ohio-state.edu/";
 	//private static string backendRootURL = "http://127.0.0.1:5000/";
 
@@ -62,6 +62,7 @@ public class ChatSocket : MonoBehaviour {
 	private string _json = "";
 	private string _audio_json = "";
 	private string receivedText = "";
+    private string _lipMovesToDo = "";
 	private Queue<string> _queryResources = new Queue<string> ();
 	private Queue<byte[]> _audioFiles = new Queue<byte[]> ();
 
@@ -234,24 +235,28 @@ public class ChatSocket : MonoBehaviour {
 			reply = receivedText; // ...set the reply to that text.
 			receivedText = "";
 			if ( reply.Contains(_csOOBstart) ) {
-				string emotion = reply.Substring( reply.IndexOf(_csOOBstart) + _csOOBstart.Length, reply.IndexOf(_csOOBend) - 1 );
+				int startidx = reply.IndexOf (_csOOBstart) + _csOOBstart.Length;
+				int endidx = reply.IndexOf (_csOOBend);
+				int len = endidx - startidx;
+				string emotion = reply.Substring (startidx, len);
 				SendMessage("ExpressEmotion", emotion);
-				reply = reply.Substring(reply.IndexOf(_csOOBend) + _csOOBend.Length ) ;
+				reply = reply.Substring(endidx + _csOOBend.Length ) ;
 			}
 			if (reply.Contains("/openCurly/")) {
 				connected = false;
 				//ScoreMe();
 			}
 			else {
-				// tell the mouthcontrol script to do its thing
-				print ("Building mouth shape list...");
-				SendMessage("BuildShapeList", reply);
-				displayTimer = Mathf.Max(7.0f,reply.Length /15 );
+                // tell the mouthcontrol script to do its thing
+                //print ("Building mouth shape list...");
+                //SendMessage("BuildShapeList", reply);
+                _lipMovesToDo = reply;
+                displayTimer = Mathf.Max(7.0f,reply.Length /15 );
 				//Application.ExternalCall("speak", reply);
 
 				//NOTE: we mute recognition using an event callback (MuteListener)
 				_speaker.Say(reply);
-				if (reply.Contains("no") || reply.Contains("No") || reply.Contains("never") || reply.Contains("didn't")|| reply.Contains("Not") || reply.Contains("Never") || reply.Contains("not") ) SendMessage("NodNo");
+                if (reply.Contains("no") || reply.Contains("No") || reply.Contains("never") || reply.Contains("didn't")|| reply.Contains("Not") || reply.Contains("Never") || reply.Contains("not") ) SendMessage("NodNo");
 				if (reply.Contains("yes") || reply.Contains("I am taking") || reply.Contains("of course")|| reply.Contains("Yes") ) SendMessage("NodYes");
 			}
 		}
@@ -336,8 +341,12 @@ public class ChatSocket : MonoBehaviour {
 					string setup = "default";
 					if (firstName == "Stimpson J." && lastName == "Cat") {
 						setup = "test";
-					}
-					StartCoroutine (Configure (setup));
+					} else if (firstName == "Filburt" && lastName == "Shellbach") {
+                        setup = "test2";
+                    } else if (firstName == "Jodene" && lastName == "Sparks") {
+                        setup = "test3";
+                    }
+                    StartCoroutine (Configure (setup));
 					_configuring = true;
 					readyToConnect = false;
 //					print ("Name recorded...");
@@ -435,7 +444,7 @@ public class ChatSocket : MonoBehaviour {
 			GUILayout.EndHorizontal ();
 			GUILayout.BeginHorizontal ();
 			if ( GUILayout.Button("Get Expert Answers", buttonopts)) {
-				Application.OpenURL("http://128.146.170.201/Downloads/ExpertAnswers.pdf");
+				Application.OpenURL("http://virtualmeded.osumc.edu/Downloads/LEPExpertAnswers.pdf");
 			}
 			GUILayout.EndHorizontal ();
 			GUILayout.BeginHorizontal ();
@@ -501,14 +510,22 @@ public class ChatSocket : MonoBehaviour {
 		_muteTimer = Math.Max (_muteTimer, duration);
 	}
 
-/*	private IEnumerator MuteRecognition(float duration){
-		_listener.Mute = true;
-		yield return new WaitForSeconds (duration);
-		_listener.Mute = false;
-		print ("Un-muted.");
-	}
-*/
-	private void GameOver(){
+    public void LipMoveListener(float duration)
+    {
+        // tell the mouthcontrol script to do its thing
+        print ("Building mouth shape list...");
+        SendMessage("BuildShapeList", _lipMovesToDo);
+        _lipMovesToDo = "";
+    }
+
+    /*	private IEnumerator MuteRecognition(float duration){
+            _listener.Mute = true;
+            yield return new WaitForSeconds (duration);
+            _listener.Mute = false;
+            print ("Un-muted.");
+        }
+    */
+    private void GameOver(){
 		_listener.enabled = false;
 		_speaker.enabled = false;
 		Time.timeScale = 0;
@@ -612,16 +629,46 @@ public class ChatSocket : MonoBehaviour {
 		_json = "";
 		// instantiate speaker
 		if (reply.speaker == "watson-tts") {
-			_speaker = _patient.AddComponent<WatsonSpeechSynthesizer> ();
-		} else if (reply.speaker == "rec-embed") {
+			if (_speaker != null && _speaker.GetType() != typeof(WatsonSpeechSynthesizer)) {
+				Destroy (_speaker);
+				_speaker = null;
+			}
+			if (_speaker == null) {
+				_speaker = _patient.AddComponent<WatsonSpeechSynthesizer> ();
+                // MUST set voice now on start
+                if (reply.avatar == "michael") {
+                    _speaker.voice = "michael";
+                } else {
+                    _speaker.voice = "michaelV3";
+                }
+            }
+        } else if (reply.speaker == "rec-embed") {
 			// instantiate embedded pre-recorded wav lookup
-			_speaker = _patient.AddComponent<EmbeddedWavLookup> ();
+			if (_speaker != null && _speaker.GetType() != typeof(EmbeddedWavLookup)) {
+				Destroy (_speaker);
+				_speaker = null;
+			}
+			if (_speaker == null) {
+				_speaker = _patient.AddComponent<EmbeddedWavLookup> ();
+			}
 		} else if (reply.speaker == "google-tts") {
 			// instantiate google text-to-speech
 			// (not implemented)
 		} else if (reply.speaker == "rec-service") {
 			// instantiate pre-recorded wav server lookup
-			_speaker = _patient.AddComponent<AssetBundleWavLookup> ();
+			if (_speaker != null && _speaker.GetType() != typeof(AssetBundleWavLookup)) {
+				Destroy (_speaker);
+				_speaker = null;
+			}
+			if (_speaker == null) {
+				_speaker = _patient.AddComponent<AssetBundleWavLookup> ();
+                // MUST set voice now on start
+                if (reply.avatar == "michaelV3") {
+                    _speaker.voice = "michaelV3";
+                } else {
+                    _speaker.voice = "vlad";
+                }
+            }
 		} else {
 			// default or error?
 		}
@@ -637,8 +684,10 @@ public class ChatSocket : MonoBehaviour {
 			_csOOBend = "]";
 		}
 
-		yield return new WaitForSeconds (2);
-		_speaker.speaking.AddListener (MuteListener);
+		yield return _speaker;
+		_speaker.speaking.AddListener(MuteListener);
+        _speaker.speaking.AddListener(LipMoveListener);
+		yield return new WaitUntil (() => _speaker.loaded == true);
 		_configuring = false;
 		_configured = true;
 
